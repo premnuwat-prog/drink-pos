@@ -7,11 +7,16 @@ let storageReady=true;
 try{sales=JSON.parse(localStorage.getItem(KEY)||'[]');cart=JSON.parse(sessionStorage.getItem(DRAFT)||'[]');if(!Array.isArray(sales)||!Array.isArray(cart))throw Error();}catch{storageReady=false;$('#error').textContent='อ่านข้อมูลเดิมไม่ได้ กรุณาสำรองข้อมูลก่อนใช้งาน';}
 const colors={cocoa:['#eee3d8','#593829','#b18665'],matcha:['#e5e9d9','#6e8147','#cfdbad'],tea:['#f3e3d1','#be7435','#f6d69d'],milk:['#f4e2e4','#dea1b0','#fff2e4'],lava:['#e8ddd5','#463026','#d4b89c']};
 function art(m){let [bg,drink,milk]=colors[m.category];if(m.name==='Fresh Milk')drink='#f5e9d6';if(m.name==='Cocoa Mint')milk='#b1d3bd';return `<div class="art" style="--bg:${bg};--drink:${drink};--milk:${milk}" aria-hidden="true"><div class="cup"></div></div>`;}
-const categories=[['all','ทั้งหมด'],['cocoa','Cocoa'],['matcha','Matcha'],['tea','Tea'],['milk','Milk'],['lava','Lava']];
+let quickSweetness=70,detailMode=false;
+const categoryLabels={cocoa:'โกโก้',matcha:'มัทฉะ',tea:'ชาไทย',milk:'นม',lava:'โกโก้ลาวา'};
+function renderQuickSweetness(){ $('#quick-sweetness').innerHTML=SWEETNESS.map(s=>`<button type="button" data-quick-sweet="${s}" class="${s===quickSweetness?'active':''}" aria-pressed="${s===quickSweetness}">${s}%</button>`).join(''); }
+$('#quick-sweetness').onclick=e=>{const b=e.target.closest('[data-quick-sweet]');if(b){quickSweetness=Number(b.dataset.quickSweet);renderQuickSweetness();}};
+$('#detail-mode').onclick=()=>{detailMode=!detailMode;$('#detail-mode').classList.toggle('active',detailMode);$('#detail-mode').setAttribute('aria-pressed',String(detailMode));$('#add-feedback').textContent=detailMode?'โหมดรายละเอียด · เลือกจำนวนและความหวานก่อนเพิ่ม':'ขายด่วน · แตะเมนูเพื่อเพิ่ม 1 แก้ว';};
+const categories=[['all','ทั้งหมด'],['cocoa','โกโก้'],['matcha','มัทฉะ'],['tea','ชา'],['milk','นม'],['lava','ลาวา']];
 function renderMenu(){
  $('#categories').innerHTML=categories.map(([id,label])=>`<button data-category="${id}" class="${id===category?'active':''}" aria-pressed="${id===category}">${label}</button>`).join('');
  const found=MENU.filter(m=>(category==='all'||m.category===category)&&m.name.toLowerCase().includes($('#search').value.toLowerCase().trim()));
- $('#menu').innerHTML=found.map(m=>`<button class="menu-card" data-id="${m.id}" aria-label="${m.name} ${m.price} บาท">${art(m)}<div class="menu-info"><span class="menu-name">${m.name}</span><div class="menu-bottom"><span class="price">฿${m.price}</span><span class="add-icon" aria-hidden="true">+</span></div></div></button>`).join('')||'<p class="muted">ไม่พบเครื่องดื่มที่ค้นหา</p>';
+ $('#menu').innerHTML=found.map(m=>`<button class="menu-card" data-id="${m.id}" aria-label="${m.name} ${m.price} บาท"><span class="menu-type type-${m.category}">${categoryLabels[m.category]}</span><div class="menu-info"><span class="menu-name">${m.name}</span><div class="menu-bottom"><span class="price">฿${m.price}</span><span class="add-icon" aria-hidden="true">+</span></div></div></button>`).join('')||'<p class="muted">ไม่พบเครื่องดื่มที่ค้นหา</p>';
 }
 function total(){return cart.reduce((sum,m)=>sum+m.price*m.qty,0);}
 function renderCart(){
@@ -24,7 +29,7 @@ function updateChange(){$('#change').textContent=money(method==='cash'?Math.max(
 function localDay(date){return new Date(date).toLocaleDateString('en-CA');}
 function stats(){const today=sales.filter(s=>localDay(s.date)===localDay(new Date()));$('#today-total').textContent=money(today.reduce((n,s)=>n+s.total,0));$('#today-count').textContent=`${today.length} ออเดอร์ · ${today.reduce((n,s)=>n+s.items.reduce((a,m)=>a+m.qty,0),0)} แก้ว`;}
 function renderSweetness(){$('#sweetness').innerHTML=SWEETNESS.map(s=>`<button type="button" data-sweet="${s}" class="${s===sweetness?'active':''}" aria-pressed="${s===sweetness}">${s}%</button>`).join('');}
-$('#menu').onclick=e=>{const b=e.target.closest('[data-id]');if(!b)return;selected=MENU[Number(b.dataset.id)];sweetness=70;qty=1;$('#qty').textContent=qty;$('#custom-name').textContent=selected.name;$('#custom-art').innerHTML=art(selected);renderSweetness();$('#customize').showModal();};
+$('#menu').onclick=e=>{const b=e.target.closest('[data-id]');if(!b)return;selected=MENU[Number(b.dataset.id)];if(!detailMode){cart=addItem(cart,selected.id,quickSweetness);$('#error').textContent='';$('#add-feedback').textContent=`เพิ่ม ${selected.name} · หวาน ${quickSweetness}% แล้ว`;renderCart();b.classList.remove('just-added');void b.offsetWidth;b.classList.add('just-added');return;}sweetness=quickSweetness;qty=1;$('#qty').textContent=qty;$('#custom-name').textContent=selected.name;$('#custom-art').innerHTML=art(selected);renderSweetness();$('#customize').showModal();};
 $('#sweetness').onclick=e=>{const b=e.target.closest('[data-sweet]');if(b){sweetness=Number(b.dataset.sweet);renderSweetness();}};
 $('#qty-minus').onclick=()=>{$('#qty').textContent=qty=Math.max(1,qty-1);};$('#qty-plus').onclick=()=>{$('#qty').textContent=qty=Math.min(99,qty+1);};
 $('#custom-form').onsubmit=e=>{e.preventDefault();for(let i=0;i<qty;i++)cart=addItem(cart,selected.id,sweetness);$('#customize').close();$('#error').textContent='';renderCart();};
@@ -95,4 +100,4 @@ $('#upload-old').onclick=()=>{try{
  old.forEach(s=>{s.sheetStatus='pending';});localStorage.setItem(KEY,JSON.stringify(current));sales=current;void syncPending();
  }catch{$('#sync-message').textContent='เตรียมบิลไม่สำเร็จ กรุณาสำรองข้อมูล';}};
 window.addEventListener('online',()=>{void syncPending();});
-renderMenu();renderCart();stats();renderSync();void syncPending();
+renderQuickSweetness();renderMenu();renderCart();stats();renderSync();void syncPending();

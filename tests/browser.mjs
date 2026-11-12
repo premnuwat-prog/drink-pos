@@ -7,8 +7,9 @@ try{
  await page.goto(process.env.POS_URL||'http://127.0.0.1:8765');
  await page.waitForSelector('.menu-card',{timeout:5000});
  assert.equal(await page.locator('.menu-card').count(),15);
+ await page.locator('#detail-mode').click();
  await page.locator('.menu-card').filter({hasText:'Dark Cocoa'}).first().click();
- await page.getByRole('button',{name:'30%',exact:true}).click();
+ await page.locator('#sweetness').getByRole('button',{name:'30%',exact:true}).click();
  await page.getByRole('button',{name:'เพิ่มลงออเดอร์',exact:true}).click();
  await page.getByLabel('รับเงิน (บาท)').fill('100');
  await page.getByRole('button',{name:'ยืนยันรับเงิน',exact:true}).click();

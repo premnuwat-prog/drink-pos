@@ -9,7 +9,7 @@ try{
  await p.getByRole('button',{name:'ปิดตั้งค่า',exact:true}).click();
  // Failure is injected in browser transport, not represented as a real Google write.
  await p.route('https://script.google.com/**',route=>route.abort('failed'));
- await p.locator('.menu-card').first().click();await p.getByRole('button',{name:'เพิ่มลงออเดอร์',exact:true}).click();
+ await p.locator('.menu-card').first().click();
  await p.getByLabel('รับเงิน (บาท)').fill('100');await p.locator('#pay').click();
  await p.waitForSelector('#receipt[open]');
  await p.waitForFunction(()=>document.querySelector('#cloud-status').textContent.includes('รอส่ง 1'));
