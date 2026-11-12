@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: node --check app.js && node --check core.js
-      - run: mkdir site && cp index.html style.css app.js core.js site/
+      - run: mkdir site && cp index.html style.css app.js core.js sync.js site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

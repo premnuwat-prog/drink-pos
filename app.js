@@ -1,3 +1,4 @@
+import {sendOrder} from './sync.js';
 import {MENU,SWEETNESS,addItem,checkout} from './core.js';
 const $=s=>document.querySelector(s), money=n=>'฿'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const KEY='cocoa-pos-v1',DRAFT='cocoa-pos-draft-v1';
@@ -38,15 +39,60 @@ function receiptRows(s){return s.items.map(m=>`<div class="receipt-line"><div>${
 $('#pay').onclick=()=>{try{
  if(!storageReady)throw Error('ระบบจัดเก็บข้อมูลไม่พร้อม');
  const sale=checkout(cart,method,Number($('#paid').value));
+ if(deviceKey())sale.sheetStatus='pending';
  // Read immediately before writing so completed orders in another tab are retained.
  const existing=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(existing))throw Error('ข้อมูลประวัติไม่ถูกต้อง');
  const next=[sale,...existing];localStorage.setItem(KEY,JSON.stringify(next));sales=next;
  $('#receipt-body').innerHTML=`<p class="muted">#${sale.id.slice(0,8)} · ${new Date(sale.date).toLocaleString('th-TH')}</p>`+receiptRows(sale);
  cart=[];$('#paid').value='';$('#error').textContent='';renderCart();stats();$('#receipt').showModal();
+ renderSync();void syncPending();
  }catch(e){$('#error').textContent=e.message.includes('เงิน')||e.message.includes('รายการ')?e.message:'บันทึกไม่สำเร็จ ห้ามรับเงินซ้ำ — ตรวจพื้นที่จัดเก็บ/ประวัติก่อนลองใหม่';}};
 for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$('#'+b.dataset.close).close();
 $('#print').onclick=()=>window.print();
 $('#history-btn').onclick=()=>{try{sales=JSON.parse(localStorage.getItem(KEY)||'[]');}catch{}$('#history-list').innerHTML=sales.length?sales.map(s=>`<details class="history-sale"><summary><strong>${money(s.total)}</strong> · ${new Date(s.date).toLocaleString('th-TH')}<br>#${s.id.slice(0,8)} · ${s.method==='cash'?'เงินสด':'โอนเงิน'}</summary><div class="items">${receiptRows(s)}</div></details>`).join(''):'<p class="muted">ยังไม่มีประวัติขาย</p>';$('#history').showModal();};
 $('#export').onclick=()=>{const rows=[['Order ID','Date','Menu','Sweetness %','Quantity','Unit price THB','Line total THB','Order total THB','Payment','Paid THB','Change THB'],...sales.flatMap(s=>s.items.map(m=>[s.id,s.date,m.name,m.sweetness,m.qty,m.price,m.price*m.qty,s.total,s.method,s.paid,s.change]))];const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`cocoa-sales-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 window.addEventListener('storage',e=>{if(e.key===KEY){try{sales=JSON.parse(e.newValue||'[]');stats();}catch{}}});
-renderMenu();renderCart();stats();
+const DEVICE_KEY='cocoa-pos-sheet-key-v1';
+let syncBusy=false,syncError='';
+function deviceKey(){try{return localStorage.getItem(DEVICE_KEY)||'';}catch{return '';}}
+function readSales(){const data=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(data))throw Error('อ่านประวัติไม่ได้');return data;}
+function renderSync(){
+ const pending=sales.filter(s=>s.sheetStatus==='pending').length;
+ const synced=sales.filter(s=>s.sheetStatus==='synced').length;
+ const text=deviceKey()?`${syncBusy?'กำลังส่ง · ':''}Sheets ยืนยันแล้ว ${synced} · รอส่ง ${pending} บิล`:`เก็บในเครื่อง · ยังไม่ตั้งค่า Sheets${pending?' · รอส่ง '+pending+' บิล':''}`;
+ $('#cloud-status').textContent=text;
+ $('#sync-message').textContent=text+(syncError?' — '+syncError:'');
+ $('#sync-now').disabled=syncBusy||!deviceKey()||!pending;
+ $('#upload-old').disabled=syncBusy||!deviceKey();
+}
+async function syncPending(){
+ if(syncBusy||!deviceKey())return;
+ syncBusy=true;syncError='';
+ try{
+  sales=readSales();renderSync();
+  const queued=sales.filter(s=>s.sheetStatus==='pending');
+  for(const sale of queued){
+   await sendOrder(sale,deviceKey());
+   // Preserve sales completed while the network request was in flight.
+   const current=readSales();const row=current.find(s=>s.id===sale.id);
+   if(!row)throw Error('ไม่พบประวัติในเครื่องหลังส่ง กรุณาตรวจชีต');
+   row.sheetStatus='synced';row.sheetSyncedAt=new Date().toISOString();
+   localStorage.setItem(KEY,JSON.stringify(current));sales=current;renderSync();
+  }
+ }catch(e){syncError=e instanceof TypeError?'เครือข่าย / CORS ไม่สำเร็จ บิลยังรอส่ง กรุณาลองอีกครั้ง':e.message;}
+ finally{syncBusy=false;renderSync();}
+}
+$('#settings-btn').onclick=()=>{$('#shop-key').value='';renderSync();$('#settings').showModal();};
+$('#settings-form').onsubmit=e=>{e.preventDefault();try{
+ const key=$('#shop-key').value.trim();if(!key)throw Error('กรอก SHOP_KEY ก่อน');
+ localStorage.setItem(DEVICE_KEY,key);$('#shop-key').value='';syncError='บันทึกคีย์แล้ว ยังไม่ยืนยันสิทธิ์จนกว่าจะส่งบิลสำเร็จ';renderSync();
+ }catch{$('#sync-message').textContent='บันทึกคีย์ไม่ได้ ตรวจพื้นที่จัดเก็บ';}};
+$('#sync-now').onclick=()=>{void syncPending();};
+$('#upload-old').onclick=()=>{try{
+ const current=readSales();const old=current.filter(s=>!s.sheetStatus);
+ if(!old.length){syncError='ไม่มีประวัติเดิมที่ยังไม่เคยส่ง';renderSync();return;}
+ if(!confirm(`ส่งประวัติเดิม ${old.length} บิลเข้า Sheets? รวมบิลทดสอบถ้ามี กรุณาตรวจประวัติก่อน`))return;
+ old.forEach(s=>{s.sheetStatus='pending';});localStorage.setItem(KEY,JSON.stringify(current));sales=current;void syncPending();
+ }catch{$('#sync-message').textContent='เตรียมบิลไม่สำเร็จ กรุณาสำรองข้อมูล';}};
+window.addEventListener('online',()=>{void syncPending();});
+renderMenu();renderCart();stats();renderSync();void syncPending();
