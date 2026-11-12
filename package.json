@@ -1,0 +1,1 @@
+{"name":"drink-pos","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.js","test:e2e":"node tests/browser.mjs"},"devDependencies":{"playwright":"^1.58.0"}}
