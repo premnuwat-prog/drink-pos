@@ -26,7 +26,7 @@ try{
   const bounds=await p.locator('.menu-card').first().boundingBox();
   assert.ok(bounds.height>=80&&bounds.width>=120,`${width}: menu touch size`);
   if(width>=768){
-   const pay=await p.locator('#pay').boundingBox();assert.ok(pay.y>=0&&pay.y+pay.height<=height,`${width}: checkout always visible`);
+   const pay=await p.locator('#queue-submit').boundingBox();assert.ok(pay.y>=0&&pay.y+pay.height<=height,`${width}: checkout always visible`);
   }
   if(width===1194){const last=await p.locator('.menu-card').last().boundingBox();assert.ok(last.y+last.height<=height,'landscape: all 15 menus visible without scrolling');}
   if(width===1194||width===820)await p.screenshot({path:`/root/drink-pos-ipad-${width}.png`,fullPage:true});

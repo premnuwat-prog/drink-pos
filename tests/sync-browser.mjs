@@ -10,6 +10,9 @@ try{
  // Failure is injected in browser transport, not represented as a real Google write.
  await p.route('https://script.google.com/**',route=>route.abort('failed'));
  await p.locator('.menu-card').first().click();
+ await p.locator('#queue-submit').click();
+ await p.getByRole('button',{name:'ยืนยันเข้าคิวรอจ่าย',exact:true}).click();
+ await p.locator('#queue-btn').click();await p.locator('[data-pay-order]').first().click();
  await p.getByLabel('รับเงิน (บาท)').fill('100');await p.locator('#pay').click();
  await p.waitForSelector('#receipt[open]');
  await p.waitForFunction(()=>document.querySelector('#cloud-status').textContent.includes('รอส่ง 1'));
