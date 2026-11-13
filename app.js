@@ -54,7 +54,21 @@ $('#pay').onclick=()=>{try{
  }catch(e){$('#error').textContent=e.message.includes('เงิน')||e.message.includes('รายการ')?e.message:'บันทึกไม่สำเร็จ ห้ามรับเงินซ้ำ — ตรวจพื้นที่จัดเก็บ/ประวัติก่อนลองใหม่';}};
 for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$('#'+b.dataset.close).close();
 $('#print').onclick=()=>window.print();
-$('#history-btn').onclick=()=>{try{sales=JSON.parse(localStorage.getItem(KEY)||'[]');}catch{}$('#history-list').innerHTML=sales.length?sales.map(s=>`<details class="history-sale"><summary><strong>${money(s.total)}</strong> · ${new Date(s.date).toLocaleString('th-TH')}<br>#${s.id.slice(0,8)} · ${s.method==='cash'?'เงินสด':'โอนเงิน'}</summary><div class="items">${receiptRows(s)}</div></details>`).join(''):'<p class="muted">ยังไม่มีประวัติขาย</p>';$('#history').showModal();};
+function renderHistory(){
+ $('#history-list').innerHTML=sales.length?sales.map(s=>`<details class="history-sale"><summary><strong>${money(s.total)}</strong> · ${new Date(s.date).toLocaleString('th-TH')}<br>#${s.id.slice(0,8)} · ${s.method==='cash'?'เงินสด':'โอนเงิน'}</summary><div class="items">${receiptRows(s)}</div><button type="button" class="delete-sale" data-delete-sale="${encodeURIComponent(s.id)}" ${syncBusy?'disabled':''}>ลบบิลนี้จากเครื่อง</button></details>`).join(''):'<p class="muted">ยังไม่มีประวัติขาย</p>';
+}
+$('#history-btn').onclick=()=>{try{sales=readSales();$('#history-error').textContent='';}catch{$('#history-error').textContent='อ่านประวัติไม่ได้ กรุณาสำรองข้อมูลก่อน';}renderHistory();$('#history').showModal();};
+$('#history-list').onclick=e=>{
+ const b=e.target.closest('[data-delete-sale]');if(!b||syncBusy)return;
+ const sale=sales.find(s=>s.id===decodeURIComponent(b.dataset.deleteSale));if(!sale)return;
+ const warning='ลบเฉพาะประวัติในเครื่องนี้ ไม่ได้ลบข้อมูลใน Google Sheets หากส่งไปแล้ว บิลที่ยังรอส่งจะไม่ถูกส่งอีก';
+ if(!confirm(`ลบบิล #${sale.id.slice(0,8)} ยอด ${money(sale.total)}?\n${warning}\nยอดสรุปในเครื่องจะลดลง ย้อนกลับไม่ได้ แนะนำส่งออก CSV ก่อนลบ`))return;
+ try{
+  const next=readSales().filter(s=>s.id!==sale.id);
+  localStorage.setItem(KEY,JSON.stringify(next));sales=next;
+  $('#history-error').textContent='';renderHistory();stats();renderSync();
+ }catch{$('#history-error').textContent='ลบไม่สำเร็จ ประวัติยังไม่ถูกลบ กรุณาตรวจพื้นที่จัดเก็บ';}
+};
 $('#export').onclick=()=>{const rows=[['Order ID','Date','Menu','Sweetness %','Quantity','Unit price THB','Line total THB','Order total THB','Payment','Paid THB','Change THB'],...sales.flatMap(s=>s.items.map(m=>[s.id,s.date,m.name,m.sweetness,m.qty,m.price,m.price*m.qty,s.total,s.method,s.paid,s.change]))];const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`cocoa-sales-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 window.addEventListener('storage',e=>{if(e.key===KEY){try{sales=JSON.parse(e.newValue||'[]');stats();}catch{}}});
 const DEVICE_KEY='cocoa-pos-sheet-key-v1';
@@ -69,6 +83,7 @@ function renderSync(){
  $('#sync-message').textContent=text+(syncError?' — '+syncError:'');
  $('#sync-now').disabled=syncBusy||!deviceKey()||!pending;
  $('#upload-old').disabled=syncBusy||!deviceKey();
+ for(const b of document.querySelectorAll('[data-delete-sale]'))b.disabled=syncBusy;
 }
 async function syncPending(){
  if(syncBusy||!deviceKey())return;
