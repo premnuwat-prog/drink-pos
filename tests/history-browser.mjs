@@ -24,7 +24,7 @@ try{
  page.once('dialog',d=>d.accept());await page.locator('[data-delete-sale]').first().click();
  assert.match(await page.locator('#history-error').innerText(),/ลบไม่สำเร็จ/);
  assert.equal(await page.locator('.history-sale').count(),2);
- assert.equal(await page.locator('#today-total').innerText(),'฿125.00');
+ assert.equal(await page.locator('#today-total').innerText(),'฿138.00');
  await page.evaluate(()=>{Storage.prototype.setItem=window.originalSetItem;});
  // Retain an order saved by another tab after the dialog opened.
  const extra=await page.evaluate(async()=>{
@@ -33,7 +33,7 @@ try{
  });
  page.once('dialog',d=>d.accept());await page.locator('[data-delete-sale]').first().click();
  assert.deepEqual(await page.evaluate(k=>JSON.parse(localStorage.getItem(k)).map(s=>s.id),key),[ids[1],extra]);
- assert.equal(await page.locator('#today-total').innerText(),'฿120.00');
+ assert.equal(await page.locator('#today-total').innerText(),'฿128.00');
  assert.equal(await page.locator('#today-count').innerText(),'2 ออเดอร์ · 2 แก้ว');
  await page.reload();await page.locator('#history-btn').click();
  assert.equal(await page.locator('.history-sale').count(),2);

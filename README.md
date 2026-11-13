@@ -1,5 +1,10 @@
 # เกิดอยากจะโก้ — Drink POS
 
+## Price updates and Apps Script
+The menu now uses the revised 15-item price list. Paid receipts, current drafts and unpaid snapshots retain their captured prices; they are not retroactively repriced. `apps-script/Code.gs` is the matching receiver source: it accepts exact new prices and the original legacy prices for retries/old queued orders, calculates totals from the captured allowed price, and preserves the original canonical hash for legacy retries. No schema or SHOP_KEY reset is needed.
+
+**Backend manual deployment required:** replace code in the EXISTING bound Apps Script project, save, Manage deployments -> edit -> New version -> Deploy (execute as owner, Anyone). Keep the existing /exec URL and Script Properties. GET should return `version:2, priceVersion:"menu-v2"`. Until the receiver is updated, the old validator may reject new-price sales; local paid receipts remain pending and can be resent after updating. Local validator tests are not a claim of deployed Google writes.
+
 ## Order numbers
 Customer-facing tickets use a persistent per-browser sequence `0000` through `9999`, wrapping and skipping numbers still in the unpaid queue. Cancelling an order does not rewind the sequence; a failed storage write may skip a number. Existing unpaid orders receive numbers on load without changing their UUIDs, totals or items. Already-paid legacy receipts keep their original labels. New receipts/history and CSV include the four-digit number; CSV also retains the immutable UUID. Internal UUIDs and the existing Sheets Order ID column remain unchanged for backend validation and idempotency. Number counters/queues are local to each browser, not globally coordinated across devices.
 
