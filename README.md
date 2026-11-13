@@ -1,4 +1,11 @@
-# Cocoa & Co. — Drink POS
+# เกิดอยากจะโก้ — Drink POS
+
+## Order queue
+Build a cart -> Summary -> confirm into unpaid queue -> immediately take the next order. Open Waiting for payment and select an order when the customer is ready. Only successful payment adds revenue, receipt history and Sheets upload. Optional customer/note text and immutable order ID identify each order. Cash and manually checked transfer are supported.
+
+Unpaid orders persist in localStorage `cocoa-pos-unpaid-v1` on this browser only; paid sales keep the existing `cocoa-pos-v1` key and drafts remain in sessionStorage. Unpaid orders do not upload to Sheets and do not count as sales. Refresh retains unpaid orders; clearing site data removes them. A payment commits its receipt before removing the queued order. Stale already-paid IDs are hidden to prevent a repeated payment after a partial storage failure. Cancelling an unpaid order requires confirmation and does not change revenue. Closing payment preserves both the queued order and any new cart draft. Use one checkout tab/device for a shared queue; queues do not sync across devices.
+
+Queue regressions: `node tests/queue-browser.mjs && node tests/queue-safety.mjs`; WebKit: `WEBKIT=1 node tests/queue-browser.mjs`. All browser tests use isolated fixture storage, and fixture keys have Google requests intercepted.
 
 Static, mobile-friendly Thai beverage POS. 15 supplied drinks with exact prices; sweetness 0/30/70/100%. No dependencies at runtime, no server and no embedded credentials.
 

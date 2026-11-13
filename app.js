@@ -1,7 +1,8 @@
 import {sendOrder} from './sync.js';
 import {MENU,SWEETNESS,addItem,checkout} from './core.js';
 const $=s=>document.querySelector(s), money=n=>'฿'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const KEY='cocoa-pos-v1',DRAFT='cocoa-pos-draft-v1';
+const KEY='cocoa-pos-v1',DRAFT='cocoa-pos-draft-v1',QUEUE_KEY='cocoa-pos-unpaid-v1';
+let paymentOrderId=null,summaryOrder=null;
 let sales=[],cart=[],category='all',selected=null,sweetness=70,qty=1,method='cash';
 let storageReady=true;
 try{sales=JSON.parse(localStorage.getItem(KEY)||'[]');cart=JSON.parse(sessionStorage.getItem(DRAFT)||'[]');if(!Array.isArray(sales)||!Array.isArray(cart))throw Error();}catch{storageReady=false;$('#error').textContent='อ่านข้อมูลเดิมไม่ได้ กรุณาสำรองข้อมูลก่อนใช้งาน';}
@@ -21,11 +22,11 @@ function renderMenu(){
 function total(){return cart.reduce((sum,m)=>sum+m.price*m.qty,0);}
 function renderCart(){
  $('#cart').innerHTML=cart.length?cart.map(m=>`<div class="cart-line"><div><strong>${m.name}</strong><small>หวาน ${m.sweetness}% · ${money(m.price)} / แก้ว</small><div class="stepper"><button data-key="${m.key}" data-delta="-1" aria-label="ลด ${m.name} หวาน ${m.sweetness}%">−</button><strong>${m.qty}</strong><button data-key="${m.key}" data-delta="1" aria-label="เพิ่ม ${m.name} หวาน ${m.sweetness}%">+</button></div></div><strong class="line-price">${money(m.price*m.qty)}</strong></div>`).join(''):'<div class="empty"><div class="empty-icon">♧</div>ยังไม่มีเครื่องดื่มในออเดอร์<br><small>เลือกเมนูโปรดทางด้านซ้ายได้เลย</small></div>';
- $('#cup-count').textContent=cart.reduce((n,m)=>n+m.qty,0);$('#total').textContent=money(total());$('#pay').disabled=!cart.length||!storageReady;
+ $('#cup-count').textContent=cart.reduce((n,m)=>n+m.qty,0);$('#total').textContent=money(total());$('#queue-submit').disabled=!cart.length||!storageReady;
  try{sessionStorage.setItem(DRAFT,JSON.stringify(cart));}catch{/* draft persistence is optional; sales writes are mandatory */}
  updateChange();
 }
-function updateChange(){$('#change').textContent=money(method==='cash'?Math.max(0,(Number($('#paid').value)||0)-total()):0);}
+function updateChange(){$('#change').textContent=money(method==='cash'?Math.max(0,(Number($('#paid').value)||0)-paymentTotal()):0);}
 function localDay(date){return new Date(date).toLocaleDateString('en-CA');}
 function stats(){const today=sales.filter(s=>localDay(s.date)===localDay(new Date()));$('#today-total').textContent=money(today.reduce((n,s)=>n+s.total,0));$('#today-count').textContent=`${today.length} ออเดอร์ · ${today.reduce((n,s)=>n+s.items.reduce((a,m)=>a+m.qty,0),0)} แก้ว`;}
 function renderSweetness(){$('#sweetness').innerHTML=SWEETNESS.map(s=>`<button type="button" data-sweet="${s}" class="${s===sweetness?'active':''}" aria-pressed="${s===sweetness}">${s}%</button>`).join('');}
@@ -39,19 +40,66 @@ $('#cart').onclick=e=>{const b=e.target.closest('[data-key]');if(!b)return;cart=
 $('#clear').onclick=()=>{if(cart.length&&confirm('ล้างรายการในออเดอร์นี้?')){cart=[];renderCart();}};
 $('#methods').onclick=e=>{const b=e.target.closest('[data-method]');if(!b)return;method=b.dataset.method;for(const el of $('#methods').children){el.classList.toggle('active',el===b);el.setAttribute('aria-pressed',String(el===b));}$('#paid-label').hidden=method!=='cash';$('#quick-cash').hidden=method!=='cash';$('#transfer-note').hidden=method!=='transfer';updateChange();};
 $('#paid').oninput=updateChange;
-$('#quick-cash').onclick=e=>{const b=e.target.closest('[data-cash]');if(b){$('#paid').value=b.dataset.cash==='exact'?total():b.dataset.cash;updateChange();}};
+$('#quick-cash').onclick=e=>{const b=e.target.closest('[data-cash]');if(b){$('#paid').value=b.dataset.cash==='exact'?paymentTotal():b.dataset.cash;updateChange();}};
 function receiptRows(s){return s.items.map(m=>`<div class="receipt-line"><div>${m.name} × ${m.qty}<small>หวาน ${m.sweetness}%</small></div><strong>${money(m.price*m.qty)}</strong></div>`).join('')+`<div class="receipt-line"><strong>รวม</strong><strong>${money(s.total)}</strong></div><div class="receipt-line"><span>${s.method==='cash'?'เงินสด':'โอนเงิน'} · รับเงิน</span><span>${money(s.paid)}</span></div><div class="receipt-line"><strong>เงินทอน</strong><strong>${money(s.change)}</strong></div>`;}
+function escapeText(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function readQueue(){
+ const data=JSON.parse(localStorage.getItem(QUEUE_KEY)||'[]');
+ if(!Array.isArray(data))throw Error('อ่านคิวไม่ได้ กรุณาสำรองข้อมูล');
+ const paidIds=new Set(readSales().map(s=>s.id));
+ return data.filter(o=>!paidIds.has(o.id));
+}
+function orderItems(order){return order.items.map(m=>`<div class="receipt-line"><div>${escapeText(m.name)} × ${m.qty}<small>หวาน ${m.sweetness}%</small></div><strong>${money(m.price*m.qty)}</strong></div>`).join('');}
+function queueLabel(order){return `#${order.id.slice(0,8)}`;}
+function renderQueue(){
+ try{
+ const queue=readQueue();$('#queue-count').textContent=queue.length;
+ $('#queue-list').innerHTML=queue.length?queue.map(o=>`<article class="queue-order"><div class="queue-card-heading"><strong>${queueLabel(o)}</strong><strong>${money(o.total)}</strong></div><p class="queue-customer">${escapeText(o.customer||'ไม่ระบุชื่อ')} · ${new Date(o.createdAt).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'})}</p>${orderItems(o)}<div class="queue-actions"><button data-cancel-order="${o.id}">ยกเลิกออเดอร์</button><button class="primary" data-pay-order="${o.id}">รับเงิน</button></div></article>`).join(''):'<p class="empty">ไม่มีออเดอร์รอจ่าย</p>';
+ }catch(e){$('#queue-error').textContent=e.message;$('#queue-count').textContent='!';}
+}
+$('#queue-submit').onclick=()=>{try{
+ if(!storageReady||!cart.length)return;
+ summaryOrder={id:crypto.randomUUID(),createdAt:new Date().toISOString(),items:cart.map(m=>({...m})),total:total()};
+ $('#summary-items').innerHTML=orderItems(summaryOrder)+`<div class="total-row"><strong>รวม</strong><strong>${money(summaryOrder.total)}</strong></div>`;
+ $('#customer-name').value='';$('#summary-error').textContent='';$('#order-summary').showModal();
+ }catch{$('#error').textContent='สรุปไม่สำเร็จ กรุณาตรวจข้อมูล';}};
+$('#queue-form').onsubmit=e=>{e.preventDefault();try{
+ if(!summaryOrder)throw Error('กรุณาสรุปออเดอร์ใหม่');
+ const queue=readQueue();
+ const order={...summaryOrder,customer:$('#customer-name').value.trim().slice(0,80)};
+ if(!queue.some(o=>o.id===order.id))localStorage.setItem(QUEUE_KEY,JSON.stringify([...queue,order]));
+ summaryOrder=null;cart=[];renderCart();renderQueue();$('#order-summary').close();
+ $('#add-feedback').textContent=`${queueLabel(order)} เข้าคิวรอจ่ายแล้ว · รับออเดอร์ถัดไปได้เลย`;
+ }catch{$('#summary-error').textContent='บันทึกคิวไม่สำเร็จ ออเดอร์ยังไม่ถูกล้าง กรุณาลองใหม่';}};
+$('#queue-btn').onclick=()=>{$('#queue-error').textContent='';renderQueue();$('#order-queue').showModal();};
+function paymentTotal(){try{return readQueue().find(o=>o.id===paymentOrderId)?.total||0;}catch{return 0;}}
+$('#queue-list').onclick=e=>{const pay=e.target.closest('[data-pay-order]'),cancel=e.target.closest('[data-cancel-order]');if(!pay&&!cancel)return;
+ try{
+ const id=pay?pay.dataset.payOrder:cancel.dataset.cancelOrder;
+ const order=readQueue().find(o=>o.id===id);if(!order)throw Error('ออเดอร์นี้ไม่อยู่ในคิวแล้ว');
+ if(cancel){
+  if(!confirm(`ยกเลิกออเดอร์ ${queueLabel(order)} ยอด ${money(order.total)}? ยังไม่ได้รับเงิน และไม่นับเป็นยอดขาย`))return;
+  localStorage.setItem(QUEUE_KEY,JSON.stringify(readQueue().filter(o=>o.id!==id)));renderQueue();return;
+ }
+ paymentOrderId=id;$('#payment-title').textContent=`รับเงิน ${queueLabel(order)}${order.customer?' · '+order.customer:''}`;
+ $('#payment-items').innerHTML=orderItems(order);$('#payment-total').textContent=money(order.total);
+ $('#payment-error').textContent='';$('#paid').value='';$('#methods [data-method="cash"]').click();updateChange();
+ $('#order-queue').close();$('#payment').showModal();
+ }catch(e){$('#queue-error').textContent=e.message;renderQueue();}};
 $('#pay').onclick=()=>{try{
  if(!storageReady)throw Error('ระบบจัดเก็บข้อมูลไม่พร้อม');
- const sale=checkout(cart,method,Number($('#paid').value));
+ const existing=readSales();
+ if(existing.some(s=>s.id===paymentOrderId))throw Error('บิลนี้รับเงินแล้ว ห้ามรับเงินซ้ำ');
+ const order=readQueue().find(o=>o.id===paymentOrderId);if(!order)throw Error('ไม่พบออเดอร์ในคิว');
+ const sale={...checkout(order.items,method,Number($('#paid').value)),id:order.id,orderedAt:order.createdAt,customer:order.customer};
  if(deviceKey())sale.sheetStatus='pending';
- // Read immediately before writing so completed orders in another tab are retained.
- const existing=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(existing))throw Error('ข้อมูลประวัติไม่ถูกต้อง');
- const next=[sale,...existing];localStorage.setItem(KEY,JSON.stringify(next));sales=next;
- $('#receipt-body').innerHTML=`<p class="muted">#${sale.id.slice(0,8)} · ${new Date(sale.date).toLocaleString('th-TH')}</p>`+receiptRows(sale);
- cart=[];$('#paid').value='';$('#error').textContent='';renderCart();stats();$('#receipt').showModal();
- renderSync();void syncPending();
- }catch(e){$('#error').textContent=e.message.includes('เงิน')||e.message.includes('รายการ')?e.message:'บันทึกไม่สำเร็จ ห้ามรับเงินซ้ำ — ตรวจพื้นที่จัดเก็บ/ประวัติก่อนลองใหม่';}};
+ localStorage.setItem(KEY,JSON.stringify([sale,...existing]));sales=[sale,...existing];
+ // Commit the paid sale first. A failed queue cleanup cannot make it payable twice.
+ try{localStorage.setItem(QUEUE_KEY,JSON.stringify(readQueue()));}catch{/* readQueue excludes already-paid IDs */}
+ paymentOrderId=null;$('#paid').value='';$('#payment').close();
+ $('#receipt-body').innerHTML=`<p class="muted">${queueLabel(order)} · ${escapeText(order.customer||'')} · ${new Date(sale.date).toLocaleString('th-TH')}</p>`+receiptRows(sale);
+ stats();renderQueue();$('#receipt').showModal();renderSync();void syncPending();
+ }catch(e){$('#payment-error').textContent=e.message.includes('เงิน')||e.message.includes('คิว')?e.message:'บันทึกรับเงินไม่สำเร็จ กรุณาตรวจประวัติก่อนลองใหม่';}};
 for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$('#'+b.dataset.close).close();
 $('#print').onclick=()=>window.print();
 function renderHistory(){
@@ -65,12 +113,14 @@ $('#history-list').onclick=e=>{
  if(!confirm(`ลบบิล #${sale.id.slice(0,8)} ยอด ${money(sale.total)}?\n${warning}\nยอดสรุปในเครื่องจะลดลง ย้อนกลับไม่ได้ แนะนำส่งออก CSV ก่อนลบ`))return;
  try{
   const next=readSales().filter(s=>s.id!==sale.id);
+  // Remove any stale paid queue rows before deleting the receipt used for deduplication.
+  if(localStorage.getItem(QUEUE_KEY)!==null)localStorage.setItem(QUEUE_KEY,JSON.stringify(readQueue()));
   localStorage.setItem(KEY,JSON.stringify(next));sales=next;
   $('#history-error').textContent='';renderHistory();stats();renderSync();
  }catch{$('#history-error').textContent='ลบไม่สำเร็จ ประวัติยังไม่ถูกลบ กรุณาตรวจพื้นที่จัดเก็บ';}
 };
 $('#export').onclick=()=>{const rows=[['Order ID','Date','Menu','Sweetness %','Quantity','Unit price THB','Line total THB','Order total THB','Payment','Paid THB','Change THB'],...sales.flatMap(s=>s.items.map(m=>[s.id,s.date,m.name,m.sweetness,m.qty,m.price,m.price*m.qty,s.total,s.method,s.paid,s.change]))];const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`cocoa-sales-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-window.addEventListener('storage',e=>{if(e.key===KEY){try{sales=JSON.parse(e.newValue||'[]');stats();}catch{}}});
+window.addEventListener('storage',e=>{if(e.key===KEY){try{sales=readSales();stats();renderSync();}catch{}}if(e.key===KEY||e.key===QUEUE_KEY)renderQueue();});
 const DEVICE_KEY='cocoa-pos-sheet-key-v1';
 let syncBusy=false,syncError='';
 function deviceKey(){try{return localStorage.getItem(DEVICE_KEY)||'';}catch{return '';}}
@@ -90,8 +140,8 @@ async function syncPending(){
  syncBusy=true;syncError='';
  try{
   sales=readSales();renderSync();
-  const queued=sales.filter(s=>s.sheetStatus==='pending');
-  for(const sale of queued){
+  let sale;
+  while((sale=readSales().find(s=>s.sheetStatus==='pending'))){
    await sendOrder(sale,deviceKey());
    // Preserve sales completed while the network request was in flight.
    const current=readSales();const row=current.find(s=>s.id===sale.id);
@@ -115,4 +165,4 @@ $('#upload-old').onclick=()=>{try{
  old.forEach(s=>{s.sheetStatus='pending';});localStorage.setItem(KEY,JSON.stringify(current));sales=current;void syncPending();
  }catch{$('#sync-message').textContent='เตรียมบิลไม่สำเร็จ กรุณาสำรองข้อมูล';}};
 window.addEventListener('online',()=>{void syncPending();});
-renderQuickSweetness();renderMenu();renderCart();stats();renderSync();void syncPending();
+renderQuickSweetness();renderMenu();renderCart();stats();renderQueue();renderSync();void syncPending();
