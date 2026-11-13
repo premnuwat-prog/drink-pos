@@ -6,6 +6,7 @@ Static, mobile-friendly Thai beverage POS. 15 supplied drinks with exact prices;
 - Menu search and categories; quantity and separate sweetness variants.
 - Cash / manually verified bank transfer; cash received and change.
 - Receipt printing, daily sales, persisted sales journal and UTF-8 CSV export.
+- Delete individual bills from expanded history with confirmation. Deletion updates local daily totals, CSV and pending uploads; it cannot be undone and does not delete rows already uploaded to Google Sheets. Export a backup first. Deletion is disabled while this tab is uploading; keep one checkout tab open.
 - Responsive desktop / tablet / phone layouts.
 
 ## Important
