@@ -1,5 +1,8 @@
 # เกิดอยากจะโก้ — Drink POS
 
+## Order numbers
+Customer-facing tickets use a persistent per-browser sequence `0000` through `9999`, wrapping and skipping numbers still in the unpaid queue. Cancelling an order does not rewind the sequence; a failed storage write may skip a number. Existing unpaid orders receive numbers on load without changing their UUIDs, totals or items. Already-paid legacy receipts keep their original labels. New receipts/history and CSV include the four-digit number; CSV also retains the immutable UUID. Internal UUIDs and the existing Sheets Order ID column remain unchanged for backend validation and idempotency. Number counters/queues are local to each browser, not globally coordinated across devices.
+
 ## Order queue
 Build a cart -> Summary -> confirm into unpaid queue -> immediately take the next order. Open Waiting for payment and select an order when the customer is ready. Only successful payment adds revenue, receipt history and Sheets upload. Optional customer/note text and immutable order ID identify each order. Cash and manually checked transfer are supported.
 

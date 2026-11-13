@@ -1,7 +1,7 @@
 import {sendOrder} from './sync.js';
-import {MENU,SWEETNESS,addItem,checkout} from './core.js';
+import {MENU,SWEETNESS,addItem,checkout,nextOrderNumber} from './core.js';
 const $=s=>document.querySelector(s), money=n=>'฿'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const KEY='cocoa-pos-v1',DRAFT='cocoa-pos-draft-v1',QUEUE_KEY='cocoa-pos-unpaid-v1';
+const KEY='cocoa-pos-v1',DRAFT='cocoa-pos-draft-v1',QUEUE_KEY='cocoa-pos-unpaid-v1',COUNTER_KEY='cocoa-pos-order-counter-v1';
 let paymentOrderId=null,summaryOrder=null;
 let sales=[],cart=[],category='all',selected=null,sweetness=70,qty=1,method='cash';
 let storageReady=true;
@@ -50,7 +50,23 @@ function readQueue(){
  return data.filter(o=>!paidIds.has(o.id));
 }
 function orderItems(order){return order.items.map(m=>`<div class="receipt-line"><div>${escapeText(m.name)} × ${m.qty}<small>หวาน ${m.sweetness}%</small></div><strong>${money(m.price*m.qty)}</strong></div>`).join('');}
-function queueLabel(order){return `#${order.id.slice(0,8)}`;}
+function queueLabel(order){return typeof order.orderNumber==='string'&&/^\d{4}$/.test(order.orderNumber)?`#${order.orderNumber}`:`#${order.id.slice(0,8)}`;}
+function reserveOrderNumber(queue){
+ const number=nextOrderNumber(localStorage.getItem(COUNTER_KEY),queue.map(o=>o.orderNumber));
+ // Reserve before queue write: a failed write may skip a number, never reuse an active ticket.
+ localStorage.setItem(COUNTER_KEY,number);return number;
+}
+function migrateUnpaidNumbers(){
+ try{
+  const queue=readQueue();let changed=false;
+  for(const order of queue){
+   if(typeof order.orderNumber!=='string'||!/^\d{4}$/.test(order.orderNumber)){
+    order.orderNumber=reserveOrderNumber(queue);changed=true;
+   }
+  }
+  if(changed)localStorage.setItem(QUEUE_KEY,JSON.stringify(queue));
+ }catch{$('#queue-error').textContent='กำหนดเลขคิวเดิมไม่สำเร็จ กรุณาตรวจพื้นที่จัดเก็บ';}
+}
 function renderQueue(){
  try{
  const queue=readQueue();$('#queue-count').textContent=queue.length;
@@ -66,7 +82,7 @@ $('#queue-submit').onclick=()=>{try{
 $('#queue-form').onsubmit=e=>{e.preventDefault();try{
  if(!summaryOrder)throw Error('กรุณาสรุปออเดอร์ใหม่');
  const queue=readQueue();
- const order={...summaryOrder,customer:$('#customer-name').value.trim().slice(0,80)};
+ const order={...summaryOrder,orderNumber:reserveOrderNumber(queue),customer:$('#customer-name').value.trim().slice(0,80)};
  if(!queue.some(o=>o.id===order.id))localStorage.setItem(QUEUE_KEY,JSON.stringify([...queue,order]));
  summaryOrder=null;cart=[];renderCart();renderQueue();$('#order-summary').close();
  $('#add-feedback').textContent=`${queueLabel(order)} เข้าคิวรอจ่ายแล้ว · รับออเดอร์ถัดไปได้เลย`;
@@ -91,7 +107,7 @@ $('#pay').onclick=()=>{try{
  const existing=readSales();
  if(existing.some(s=>s.id===paymentOrderId))throw Error('บิลนี้รับเงินแล้ว ห้ามรับเงินซ้ำ');
  const order=readQueue().find(o=>o.id===paymentOrderId);if(!order)throw Error('ไม่พบออเดอร์ในคิว');
- const sale={...checkout(order.items,method,Number($('#paid').value)),id:order.id,orderedAt:order.createdAt,customer:order.customer};
+ const sale={...checkout(order.items,method,Number($('#paid').value)),id:order.id,orderNumber:order.orderNumber,orderedAt:order.createdAt,customer:order.customer};
  if(deviceKey())sale.sheetStatus='pending';
  localStorage.setItem(KEY,JSON.stringify([sale,...existing]));sales=[sale,...existing];
  // Commit the paid sale first. A failed queue cleanup cannot make it payable twice.
@@ -103,14 +119,14 @@ $('#pay').onclick=()=>{try{
 for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$('#'+b.dataset.close).close();
 $('#print').onclick=()=>window.print();
 function renderHistory(){
- $('#history-list').innerHTML=sales.length?sales.map(s=>`<details class="history-sale"><summary><strong>${money(s.total)}</strong> · ${new Date(s.date).toLocaleString('th-TH')}<br>#${s.id.slice(0,8)} · ${s.method==='cash'?'เงินสด':'โอนเงิน'}</summary><div class="items">${receiptRows(s)}</div><button type="button" class="delete-sale" data-delete-sale="${encodeURIComponent(s.id)}" ${syncBusy?'disabled':''}>ลบบิลนี้จากเครื่อง</button></details>`).join(''):'<p class="muted">ยังไม่มีประวัติขาย</p>';
+ $('#history-list').innerHTML=sales.length?sales.map(s=>`<details class="history-sale"><summary><strong>${money(s.total)}</strong> · ${new Date(s.date).toLocaleString('th-TH')}<br>${queueLabel(s)} · ${s.method==='cash'?'เงินสด':'โอนเงิน'}</summary><div class="items">${receiptRows(s)}</div><button type="button" class="delete-sale" data-delete-sale="${encodeURIComponent(s.id)}" ${syncBusy?'disabled':''}>ลบบิลนี้จากเครื่อง</button></details>`).join(''):'<p class="muted">ยังไม่มีประวัติขาย</p>';
 }
 $('#history-btn').onclick=()=>{try{sales=readSales();$('#history-error').textContent='';}catch{$('#history-error').textContent='อ่านประวัติไม่ได้ กรุณาสำรองข้อมูลก่อน';}renderHistory();$('#history').showModal();};
 $('#history-list').onclick=e=>{
  const b=e.target.closest('[data-delete-sale]');if(!b||syncBusy)return;
  const sale=sales.find(s=>s.id===decodeURIComponent(b.dataset.deleteSale));if(!sale)return;
  const warning='ลบเฉพาะประวัติในเครื่องนี้ ไม่ได้ลบข้อมูลใน Google Sheets หากส่งไปแล้ว บิลที่ยังรอส่งจะไม่ถูกส่งอีก';
- if(!confirm(`ลบบิล #${sale.id.slice(0,8)} ยอด ${money(sale.total)}?\n${warning}\nยอดสรุปในเครื่องจะลดลง ย้อนกลับไม่ได้ แนะนำส่งออก CSV ก่อนลบ`))return;
+ if(!confirm(`ลบบิล ${queueLabel(sale)} ยอด ${money(sale.total)}?\n${warning}\nยอดสรุปในเครื่องจะลดลง ย้อนกลับไม่ได้ แนะนำส่งออก CSV ก่อนลบ`))return;
  try{
   const next=readSales().filter(s=>s.id!==sale.id);
   // Remove any stale paid queue rows before deleting the receipt used for deduplication.
@@ -119,7 +135,7 @@ $('#history-list').onclick=e=>{
   $('#history-error').textContent='';renderHistory();stats();renderSync();
  }catch{$('#history-error').textContent='ลบไม่สำเร็จ ประวัติยังไม่ถูกลบ กรุณาตรวจพื้นที่จัดเก็บ';}
 };
-$('#export').onclick=()=>{const rows=[['Order ID','Date','Menu','Sweetness %','Quantity','Unit price THB','Line total THB','Order total THB','Payment','Paid THB','Change THB'],...sales.flatMap(s=>s.items.map(m=>[s.id,s.date,m.name,m.sweetness,m.qty,m.price,m.price*m.qty,s.total,s.method,s.paid,s.change]))];const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`cocoa-sales-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+$('#export').onclick=()=>{const rows=[['Order ID','Order number','Date','Menu','Sweetness %','Quantity','Unit price THB','Line total THB','Order total THB','Payment','Paid THB','Change THB'],...sales.flatMap(s=>s.items.map(m=>[s.id,s.orderNumber||'',s.date,m.name,m.sweetness,m.qty,m.price,m.price*m.qty,s.total,s.method,s.paid,s.change]))];const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`cocoa-sales-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 window.addEventListener('storage',e=>{if(e.key===KEY){try{sales=readSales();stats();renderSync();}catch{}}if(e.key===KEY||e.key===QUEUE_KEY)renderQueue();});
 const DEVICE_KEY='cocoa-pos-sheet-key-v1';
 let syncBusy=false,syncError='';
@@ -165,4 +181,4 @@ $('#upload-old').onclick=()=>{try{
  old.forEach(s=>{s.sheetStatus='pending';});localStorage.setItem(KEY,JSON.stringify(current));sales=current;void syncPending();
  }catch{$('#sync-message').textContent='เตรียมบิลไม่สำเร็จ กรุณาสำรองข้อมูล';}};
 window.addEventListener('online',()=>{void syncPending();});
-renderQuickSweetness();renderMenu();renderCart();stats();renderQueue();renderSync();void syncPending();
+renderQuickSweetness();renderMenu();renderCart();stats();migrateUnpaidNumbers();renderQueue();renderSync();void syncPending();

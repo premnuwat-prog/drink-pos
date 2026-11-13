@@ -1,3 +1,12 @@
+export function nextOrderNumber(last,active){
+ const used=new Set(active);
+ const start=typeof last==='string'&&/^\d{4}$/.test(last)?Number(last):-1;
+ for(let offset=1;offset<=10000;offset++){
+  const number=String((start+offset)%10000).padStart(4,'0');
+  if(!used.has(number))return number;
+ }
+ throw Error('เลขคิวเต็ม กรุณารับเงินหรือยกเลิกออเดอร์ก่อน');
+}
 export function addItem(cart,id,sweetness){
  if(!SWEETNESS.includes(sweetness)) throw Error('ความหวานไม่ถูกต้อง');
  const menu=MENU.find(m=>m.id===id); if(!menu) throw Error('ไม่พบเมนู');
