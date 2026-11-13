@@ -1,0 +1,30 @@
+import {chromium,webkit} from 'playwright';import assert from 'node:assert/strict';
+const engine=process.env.WEBKIT?webkit:chromium;const b=await engine.launch({args:process.env.WEBKIT?[]:['--no-sandbox']});const p=await b.newPage();
+try{
+ await p.goto(process.env.POS_URL||'http://127.0.0.1:8765');
+ const make=async()=>{await p.locator('.menu-card').first().click();await p.locator('#queue-submit').click();await p.getByRole('button',{name:'ยืนยันเข้าคิวรอจ่าย',exact:true}).click();};
+ await make();await p.locator('#queue-btn').click();
+ assert.match(await p.locator('.queue-card-heading').innerText(),/#0000/);
+ await p.getByRole('button',{name:'ปิดคิว',exact:true}).click();await p.reload();await make();
+ await p.locator('#queue-btn').click();assert.match(await p.locator('.queue-card-heading').nth(1).innerText(),/#0001/);
+ await p.locator('[data-pay-order]').first().click();assert.match(await p.locator('#payment-title').innerText(),/#0000/);
+ await p.locator('[data-method="transfer"]').click();await p.locator('#pay').click();await p.waitForSelector('#receipt[open]');
+ assert.match(await p.locator('#receipt-body').innerText(),/#0000/);
+ const sale=await p.evaluate(()=>JSON.parse(localStorage.getItem('cocoa-pos-v1'))[0]);
+ assert.equal(sale.orderNumber,'0000');assert.match(sale.id,/^[a-f0-9-]{36}$/);
+ await p.getByRole('button',{name:'ออเดอร์ถัดไป',exact:true}).click();await p.locator('#history-btn').click();
+ assert.match(await p.locator('.history-sale summary').innerText(),/#0000/);
+ await p.getByRole('button',{name:'ปิดประวัติ',exact:true}).click();
+ await p.evaluate(()=>localStorage.setItem('cocoa-pos-order-counter-v1','9999'));await make();
+ await p.locator('#queue-btn').click();assert.match(await p.locator('.queue-card-heading').last().innerText(),/#0000/);
+ assert.match(await p.locator('.queue-card-heading').first().innerText(),/#0001/);
+ await p.getByRole('button',{name:'ปิดคิว',exact:true}).click();
+ await p.evaluate(()=>localStorage.setItem('cocoa-pos-order-counter-v1','9999'));await make();
+ await p.locator('#queue-btn').click();assert.match(await p.locator('.queue-card-heading').last().innerText(),/#0002/);
+ await p.getByRole('button',{name:'ปิดคิว',exact:true}).click();
+ const legacyId=await p.evaluate(()=>{const q=JSON.parse(localStorage.getItem('cocoa-pos-unpaid-v1'));delete q[0].orderNumber;localStorage.setItem('cocoa-pos-unpaid-v1',JSON.stringify(q));return q[0].id;});
+ await p.reload();await p.locator('#queue-btn').click();
+ assert.match(await p.locator('.queue-card-heading').first().innerText(),/^#\d{4}\n/);
+ assert.equal(await p.locator('[data-pay-order]').first().getAttribute('data-pay-order'),legacyId);
+ console.log('PASS four-digit display: sequence persists, payment/receipt/history match, wrap skips active numbers, legacy unpaid migrated, UUID remains for deduplication; '+engine.name());
+}finally{await b.close();}
