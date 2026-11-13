@@ -17,7 +17,7 @@ try{
  await page.getByLabel('รับเงิน (บาท)').fill('100');
  await page.getByRole('button',{name:'ยืนยันรับเงิน',exact:true}).click();
  await page.waitForSelector('#receipt[open]');
- assert.match(await page.locator('#receipt').innerText(),/35\.00/);
+ assert.match(await page.locator('#receipt').innerText(),/31\.00/);
  await page.getByRole('button',{name:'ออเดอร์ถัดไป',exact:true}).click();
  await page.reload();
  await page.getByRole('button',{name:'ประวัติขาย',exact:true}).click();

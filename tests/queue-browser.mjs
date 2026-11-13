@@ -31,10 +31,10 @@ try{
  assert.match(await p.locator('#payment-error').innerText(),/เงินไม่พอ/);
  await p.getByLabel('รับเงิน (บาท)').fill('100');await p.locator('#pay').click();
  await p.waitForSelector('#receipt[open]');
- assert.match(await p.locator('#receipt').innerText(),/35\.00/);
+ assert.match(await p.locator('#receipt').innerText(),/31\.00/);
  assert.equal(await p.locator('#cup-count').innerText(),'1');
  const sales=await p.evaluate(()=>JSON.parse(localStorage.getItem('cocoa-pos-v1')));
- assert.equal(sales.length,1);assert.equal(sales[0].total,65);
+ assert.equal(sales.length,1);assert.equal(sales[0].total,69);
  await p.getByRole('button',{name:'ออเดอร์ถัดไป',exact:true}).click();
  await p.reload();
  await p.getByRole('button',{name:/คิวรอจ่าย/}).first().click();
@@ -44,7 +44,7 @@ try{
  await p.getByRole('button',{name:'โอนเงิน',exact:true}).click();await p.locator('#pay').click();
  await p.waitForSelector('#receipt[open]');
  assert.equal(await p.evaluate(()=>JSON.parse(localStorage.getItem('cocoa-pos-v1')).length),2);
- assert.match(await p.locator('#today-total').innerText(),/140\.00/);
+ assert.match(await p.locator('#today-total').innerText(),/148\.00/);
  await p.getByRole('button',{name:'ออเดอร์ถัดไป',exact:true}).click();
  await p.getByRole('button',{name:/คิวรอจ่าย/}).first().click();
  assert.equal(await p.locator('.queue-order').count(),0);

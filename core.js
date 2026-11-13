@@ -24,5 +24,5 @@ export function checkout(cart,method,paid){
 }
 export const SWEETNESS=[0,30,70,100];
 export const MENU=[
- ['Dark Cocoa',65,'cocoa'],['Classic Cocoa',60,'cocoa'],['Cocoa Thai Tea',65,'cocoa'],['Matcha Dark Cocoa',80,'matcha'],['Cocoa Mint',60,'cocoa'],['Cocoa Pink Milk',60,'cocoa'],['Thai Tea',60,'tea'],['Pure Matcha',70,'matcha'],['Matcha Latte',75,'matcha'],['Pink Milk',50,'milk'],['Fresh Milk',50,'milk'],['Milk Cocoa Lava',75,'lava'],['Thai Tea Cocoa Lava',85,'lava'],['Matcha Latte Cocoa Lava',90,'lava'],['Pink Venom Cocoa Lava',75,'lava']
+ ['Dark Cocoa',69,'cocoa'],['Classic Cocoa',69,'cocoa'],['Cocoa Thai Tea',69,'cocoa'],['Matcha Dark Cocoa',79,'matcha'],['Cocoa Mint',65,'cocoa'],['Cocoa Pink Milk',65,'cocoa'],['Thai Tea',59,'tea'],['Pure Matcha',69,'matcha'],['Matcha Latte',79,'matcha'],['Pink Milk',55,'milk'],['Fresh Milk',55,'milk'],['Milk Cocoa Lava',79,'lava'],['Thai Tea Cocoa Lava',89,'lava'],['Matcha Latte Cocoa Lava',89,'lava'],['Pink Venom Cocoa Lava',79,'lava']
 ].map(([name,price,category],id)=>({id,name,price,category}));
