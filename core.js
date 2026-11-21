@@ -1,3 +1,8 @@
+export function saleDay(date=new Date()){
+ const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Bangkok',year:'numeric',month:'2-digit',day:'2-digit'}).formatToParts(new Date(date));
+ const value=type=>parts.find(p=>p.type===type).value;
+ return `${value('year')}-${value('month')}-${value('day')}`;
+}
 export function nextOrderNumber(last,active){
  const used=new Set(active);
  const start=typeof last==='string'&&/^\d{4}$/.test(last)?Number(last):-1;

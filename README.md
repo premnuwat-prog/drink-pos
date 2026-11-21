@@ -17,6 +17,11 @@ Queue regressions: `node tests/queue-browser.mjs && node tests/queue-safety.mjs`
 
 Static, mobile-friendly Thai beverage POS. 15 supplied drinks with exact prices; sweetness 0/30/70/100%. No dependencies at runtime, no server and no embedded credentials.
 
+## Daily sales
+History defaults to today and filters by payment date in Asia/Bangkok (UTC+7), independent of device timezone. Select a past date to view revenue, bill/cup counts, cash and transfer totals; unpaid orders are excluded. Daily CSV exports only the selected day; the separate all-history export remains available. The today card refreshes after Thai midnight (within 30 seconds while active, or on focus/visibility return). Viewing or exporting history does not migrate or rewrite stored receipts, IDs, captured prices or upload state.
+
+Run `node tests/daily-sales-browser.mjs` and `WEBKIT=1 node tests/daily-sales-browser.mjs`; all fixtures are isolated from real sales and Sheets.
+
 ## Features
 - Menu search and categories; quantity and separate sweetness variants.
 - Cash / manually verified bank transfer; cash received and change.

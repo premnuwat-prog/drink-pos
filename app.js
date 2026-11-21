@@ -1,5 +1,5 @@
 import {sendOrder} from './sync.js';
-import {MENU,SWEETNESS,addItem,checkout,nextOrderNumber} from './core.js';
+import {MENU,SWEETNESS,addItem,checkout,nextOrderNumber,saleDay} from './core.js';
 const $=s=>document.querySelector(s), money=n=>'฿'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const KEY='cocoa-pos-v1',DRAFT='cocoa-pos-draft-v1',QUEUE_KEY='cocoa-pos-unpaid-v1',COUNTER_KEY='cocoa-pos-order-counter-v1';
 let paymentOrderId=null,summaryOrder=null;
@@ -27,7 +27,7 @@ function renderCart(){
  updateChange();
 }
 function updateChange(){$('#change').textContent=money(method==='cash'?Math.max(0,(Number($('#paid').value)||0)-paymentTotal()):0);}
-function localDay(date){return new Date(date).toLocaleDateString('en-CA');}
+function localDay(date){return saleDay(date);}
 function stats(){const today=sales.filter(s=>localDay(s.date)===localDay(new Date()));$('#today-total').textContent=money(today.reduce((n,s)=>n+s.total,0));$('#today-count').textContent=`${today.length} ออเดอร์ · ${today.reduce((n,s)=>n+s.items.reduce((a,m)=>a+m.qty,0),0)} แก้ว`;}
 function renderSweetness(){$('#sweetness').innerHTML=SWEETNESS.map(s=>`<button type="button" data-sweet="${s}" class="${s===sweetness?'active':''}" aria-pressed="${s===sweetness}">${s}%</button>`).join('');}
 $('#menu').onclick=e=>{const b=e.target.closest('[data-id]');if(!b)return;selected=MENU[Number(b.dataset.id)];if(!detailMode){cart=addItem(cart,selected.id,quickSweetness);$('#error').textContent='';$('#add-feedback').textContent=`เพิ่ม ${selected.name} · หวาน ${quickSweetness}% แล้ว`;renderCart();b.classList.remove('just-added');void b.offsetWidth;b.classList.add('just-added');return;}sweetness=quickSweetness;qty=1;$('#qty').textContent=qty;$('#custom-name').textContent=selected.name;$('#custom-art').innerHTML=art(selected);renderSweetness();$('#customize').showModal();};
@@ -113,15 +113,32 @@ $('#pay').onclick=()=>{try{
  // Commit the paid sale first. A failed queue cleanup cannot make it payable twice.
  try{localStorage.setItem(QUEUE_KEY,JSON.stringify(readQueue()));}catch{/* readQueue excludes already-paid IDs */}
  paymentOrderId=null;$('#paid').value='';$('#payment').close();
- $('#receipt-body').innerHTML=`<p class="muted">${queueLabel(order)} · ${escapeText(order.customer||'')} · ${new Date(sale.date).toLocaleString('th-TH')}</p>`+receiptRows(sale);
+ $('#receipt-body').innerHTML=`<p class="muted">${queueLabel(order)} · ${escapeText(order.customer||'')} · ${new Date(sale.date).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'})}</p>`+receiptRows(sale);
  stats();renderQueue();$('#receipt').showModal();renderSync();void syncPending();
  }catch(e){$('#payment-error').textContent=e.message.includes('เงิน')||e.message.includes('คิว')?e.message:'บันทึกรับเงินไม่สำเร็จ กรุณาตรวจประวัติก่อนลองใหม่';}};
 for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>$('#'+b.dataset.close).close();
 $('#print').onclick=()=>window.print();
+let historyFollowsToday=true;
+function dailySales(){return sales.filter(s=>localDay(s.date)===$('#history-date').value);}
 function renderHistory(){
- $('#history-list').innerHTML=sales.length?sales.map(s=>`<details class="history-sale"><summary><strong>${money(s.total)}</strong> · ${new Date(s.date).toLocaleString('th-TH')}<br>${queueLabel(s)} · ${s.method==='cash'?'เงินสด':'โอนเงิน'}</summary><div class="items">${receiptRows(s)}</div><button type="button" class="delete-sale" data-delete-sale="${encodeURIComponent(s.id)}" ${syncBusy?'disabled':''}>ลบบิลนี้จากเครื่อง</button></details>`).join(''):'<p class="muted">ยังไม่มีประวัติขาย</p>';
+ const rows=dailySales();
+ const sum=list=>list.reduce((n,s)=>n+s.total,0);
+ $('#history-summary').textContent=`ยอดขาย ${money(sum(rows))} · ${rows.length} ออเดอร์ · ${rows.reduce((n,s)=>n+s.items.reduce((a,m)=>a+m.qty,0),0)} แก้ว · เงินสด ${money(sum(rows.filter(s=>s.method==='cash')))} · โอน ${money(sum(rows.filter(s=>s.method==='transfer')))}`;
+ $('#history-list').innerHTML=rows.length?rows.map(s=>`<details class="history-sale"><summary><strong>${money(s.total)}</strong> · ${new Date(s.date).toLocaleString('th-TH',{timeZone:'Asia/Bangkok'})}<br>${queueLabel(s)} · ${s.method==='cash'?'เงินสด':'โอนเงิน'}</summary><div class="items">${receiptRows(s)}</div><button type="button" class="delete-sale" data-delete-sale="${encodeURIComponent(s.id)}" ${syncBusy?'disabled':''}>ลบบิลนี้จากเครื่อง</button></details>`).join(''):'<p class="muted">ยังไม่มีประวัติขายในวันที่เลือก</p>';
 }
-$('#history-btn').onclick=()=>{try{sales=readSales();$('#history-error').textContent='';}catch{$('#history-error').textContent='อ่านประวัติไม่ได้ กรุณาสำรองข้อมูลก่อน';}renderHistory();$('#history').showModal();};
+function refreshHistory(){try{sales=readSales();$('#history-error').textContent='';}catch{$('#history-error').textContent='อ่านประวัติไม่ได้ กรุณาสำรองข้อมูลก่อน';}renderHistory();}
+$('#history-btn').onclick=()=>{historyFollowsToday=true;$('#history-date').value=localDay(new Date());refreshHistory();$('#history').showModal();};
+$('#history-date').onchange=()=>{historyFollowsToday=false;refreshHistory();};
+$('#history-today').onclick=()=>{historyFollowsToday=true;$('#history-date').value=localDay(new Date());renderHistory();};
+let lastSalesDay=localDay(new Date());
+function refreshSalesDay(){
+ const today=localDay(new Date());
+ try{sales=readSales();stats();if(historyFollowsToday)$('#history-date').value=today;if($('#history').open)renderHistory();}catch{/* preserve the last readable history on storage failure */}
+ lastSalesDay=today;
+}
+window.addEventListener('focus',refreshSalesDay);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshSalesDay();});
+setInterval(()=>{if(localDay(new Date())!==lastSalesDay)refreshSalesDay();},30000);
 $('#history-list').onclick=e=>{
  const b=e.target.closest('[data-delete-sale]');if(!b||syncBusy)return;
  const sale=sales.find(s=>s.id===decodeURIComponent(b.dataset.deleteSale));if(!sale)return;
@@ -135,7 +152,9 @@ $('#history-list').onclick=e=>{
   $('#history-error').textContent='';renderHistory();stats();renderSync();
  }catch{$('#history-error').textContent='ลบไม่สำเร็จ ประวัติยังไม่ถูกลบ กรุณาตรวจพื้นที่จัดเก็บ';}
 };
-$('#export').onclick=()=>{const rows=[['Order ID','Order number','Date','Menu','Sweetness %','Quantity','Unit price THB','Line total THB','Order total THB','Payment','Paid THB','Change THB'],...sales.flatMap(s=>s.items.map(m=>[s.id,s.orderNumber||'',s.date,m.name,m.sweetness,m.qty,m.price,m.price*m.qty,s.total,s.method,s.paid,s.change]))];const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=`cocoa-sales-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+function exportSales(records,filename){const rows=[['Order ID','Order number','Date','Menu','Sweetness %','Quantity','Unit price THB','Line total THB','Order total THB','Payment','Paid THB','Change THB'],...records.flatMap(s=>s.items.map(m=>[s.id,s.orderNumber||'',s.date,m.name,m.sweetness,m.qty,m.price,m.price*m.qty,s.total,s.method,s.paid,s.change]))];const csv='\uFEFF'+rows.map(row=>row.map(c=>'"'+String(c).replaceAll('"','""')+'"').join(',')).join('\r\n');const url=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8;'}));const a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+$('#export').onclick=()=>{try{sales=readSales();exportSales(sales,`cocoa-sales-all-${localDay(new Date())}.csv`);}catch{$('#history-error').textContent='ส่งออกไม่สำเร็จ กรุณาตรวจประวัติ';}};
+$('#export-day').onclick=()=>{try{sales=readSales();exportSales(dailySales(),`cocoa-sales-${$('#history-date').value}.csv`);}catch{$('#history-error').textContent='ส่งออกไม่สำเร็จ กรุณาตรวจประวัติ';}};
 window.addEventListener('storage',e=>{if(e.key===KEY){try{sales=readSales();stats();renderSync();}catch{}}if(e.key===KEY||e.key===QUEUE_KEY)renderQueue();});
 const DEVICE_KEY='cocoa-pos-sheet-key-v1';
 let syncBusy=false,syncError='';
